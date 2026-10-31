@@ -14,6 +14,7 @@ param(
     [string]$AppSubdir = ".",
     [string]$InstanceType = "t3.micro",
     [string]$AllowedHttpCidr = "0.0.0.0/0",
+    [int]$BackupRetentionDays = 1,   # the AWS free plan rejects 7; use 7 on a paid plan
     [int]$MonthlyBudgetUsd = 5,
     [switch]$NoRollback
 )
@@ -40,6 +41,7 @@ aws cloudformation deploy `
         InstanceType=$InstanceType `
         AlertEmail=$AlertEmail `
         AllowedHttpCidr=$AllowedHttpCidr `
+        BackupRetentionDays=$BackupRetentionDays `
         MonthlyBudgetUsd=$MonthlyBudgetUsd
 if ($LASTEXITCODE -ne 0) { throw "CloudFormation deploy failed - check the Events tab in the console (see RUN-GUIDE troubleshooting)." }
 

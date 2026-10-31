@@ -23,7 +23,7 @@ flowchart LR
         EC2[EC2 t3.micro<br/>Docker: FastAPI + uvicorn]
       end
       subgraph Private subnets - no internet route
-        RDS[(RDS PostgreSQL<br/>encrypted, 7-day backups)]
+        RDS[(RDS PostgreSQL<br/>encrypted, daily backups + PITR)]
       end
     end
     EIP --> EC2
@@ -45,7 +45,7 @@ More detail: [docs/architecture.md](docs/architecture.md)
 | IAM least privilege | Instance role can read **only its two secrets** and write **only its own log group**. No SSH; access through SSM Session Manager. DB security group accepts traffic only from the app security group | [infra/template.yaml](infra/template.yaml) `InstanceRole`, [docs/architecture.md#security](docs/architecture.md#security--iam) |
 | Configuration / secrets management | Only secret **ARNs** are passed in as env vars. The RDS password is managed and auto-rotated by RDS, and the app re-reads it after a rotation | [app/config.py](app/config.py), [app/db.py](app/db.py), [tests/test_db_rotation.py](tests/test_db_rotation.py) |
 | Monitoring / logging | JSON request logs with request IDs → CloudWatch. Metric filters, 6 alarms, a dashboard, EC2 auto-recovery | [docs/operations-runbook.md](docs/operations-runbook.md) |
-| Backup / recovery plan | RDS daily backups + 7-day point-in-time restore, final snapshot on delete, written restore runbook with RTO/RPO | [docs/operations-runbook.md#backup--recovery](docs/operations-runbook.md#backup--recovery) |
+| Backup / recovery plan | RDS daily backups + point-in-time restore (1 day on the AWS free plan, 7 on a paid plan), final snapshot on delete, written restore runbook with RTO/RPO | [docs/operations-runbook.md#backup--recovery](docs/operations-runbook.md#backup--recovery) |
 | Cost-awareness notes | Free-tier sizing, no NAT gateway, log retention limits, $5 budget alarm | [docs/cost-notes.md](docs/cost-notes.md) |
 | Edge cases / invalid input | Validation (422), auth (401), duplicate SKU (409), oversell (409, atomic), FK-protected delete (409), row locking for concurrent orders | [tests/](tests/), [docs/test-evidence.md](docs/test-evidence.md) |
 

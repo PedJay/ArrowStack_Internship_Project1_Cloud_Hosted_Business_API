@@ -35,6 +35,12 @@ Parameters:
     Type: String
     Default: db.t4g.micro
     AllowedValues: [db.t4g.micro, db.t3.micro]
+  BackupRetentionDays:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 35
+    Description: Days of automated backups / point-in-time restore. The AWS free plan rejects 7, so 1 is the default; use 7 on a paid plan
   MonthlyBudgetUsd:
     Type: Number
     Default: 5
@@ -161,7 +167,7 @@ Resources:
       VPCSecurityGroups: [!Ref DbSecurityGroup]
       PubliclyAccessible: false
       MultiAZ: false
-      BackupRetentionPeriod: 7        # daily snapshots + point-in-time restore for 7 days
+      BackupRetentionPeriod: !Ref BackupRetentionDays  # daily snapshot + point-in-time restore window
       PreferredBackupWindow: "18:30-19:00"          # 00:00-00:30 IST
       PreferredMaintenanceWindow: "sun:19:30-sun:20:00"
       CopyTagsToSnapshot: true

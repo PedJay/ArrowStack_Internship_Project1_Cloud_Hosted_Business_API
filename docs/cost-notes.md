@@ -15,7 +15,7 @@
 | Public IPv4 (Elastic IP) | 1 address, 730 h | ~$3.65 | $0 (750 h, EC2 free tier) |
 | RDS PostgreSQL | db.t4g.micro single-AZ, 730 h | ~$11.70–12.40 | $0 (750 h) |
 | RDS storage | 20 GB gp3 | ~$2.30–2.60 | $0 (20 GB) |
-| RDS backups | 7 days, ≤ 20 GB | $0 (free up to DB size) | $0 |
+| RDS backups | 1 day (free-plan limit; 7 on paid), ≤ 20 GB | $0 (free up to DB size) | $0 |
 | Secrets Manager | 2 secrets | $0.80 | $0.80 (30-day trial per secret) |
 | CloudWatch | 7 alarms, 3 custom metrics, 1 dashboard, < 1 GB logs | ~$0–1 | $0 (10 alarms, 10 metrics, 3 dashboards, 5 GB logs) |
 | SNS email, Budgets | | $0 | $0 |

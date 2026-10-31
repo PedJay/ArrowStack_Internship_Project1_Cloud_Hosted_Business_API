@@ -46,7 +46,7 @@ You should receive an email within about 1 minute. The alarm returns to OK at th
 
 | | Setting | Meaning |
 |---|---|---|
-| Automated backups | Daily, 00:00–00:30 IST, retained 7 days | Free up to the DB's storage size |
+| Automated backups | Daily, 00:00–00:30 IST, retained 1 day on the free plan (`BackupRetentionDays`, 7 on a paid plan) | Free up to the DB's storage size |
 | Point-in-time restore (PITR) | Transaction logs every 5 min | **RPO ≤ 5 minutes** |
 | Final snapshot | `DeletionPolicy: Snapshot` | Deleting the stack never silently destroys data |
 | Encryption | Backups and snapshots inherit KMS encryption | |

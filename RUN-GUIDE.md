@@ -359,7 +359,7 @@ Within ~1 minute you receive an email "ALARM: brightmart-api-5xx-errors". Screen
 ### F6. Security evidence (C7, C8, C9)
 
 - **C7 IAM**: Console -> IAM -> Roles -> search `brightmart-api-InstanceRole` -> Permissions -> expand `app-runtime` -> screenshot (only 2 secrets + 1 log group).
-- **C8 RDS**: Console -> RDS -> Databases -> `brightmart-api-db` -> **Connectivity & security** shows *Publicly accessible: No*; **Configuration** shows encryption enabled and the engine version; **Maintenance & backups** shows 7-day retention. Screenshots. Write the engine version into `docs/test-evidence.md`.
+- **C8 RDS**: Console -> RDS -> Databases -> `brightmart-api-db` -> **Connectivity & security** shows *Publicly accessible: No*; **Configuration** shows encryption enabled and the engine version; **Maintenance & backups** shows 1-day retention (the free-plan maximum; see D16). Screenshots. Write the engine version into `docs/test-evidence.md`.
 - **C9 DB not reachable from the internet**:
 
 ```powershell

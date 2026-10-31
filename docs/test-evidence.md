@@ -42,7 +42,7 @@ place order, oversell 409, read order, stock 5 → 3, low-stock report, unknown 
 | C5 | Logs Insights query tracing one `request_id` | screenshot |
 | C6 | Alarm test email (`set-alarm-state`) | screenshot |
 | C7 | IAM role policy (shows only 2 secrets + 1 log group) | screenshot |
-| C8 | RDS: "Publicly accessible: No", encryption, 7-day backups, engine version | screenshot |
+| C8 | RDS: "Publicly accessible: No", encryption, backup retention (1 day, free plan), engine version | screenshot |
 | C9 | `curl http://<ip>:5432` / `nc` from laptop **fails**, i.e. the DB is not reachable from the internet | screenshot |
 | C10 | Restore drill: start/end time, **measured RTO = ___ min** | runbook §Restore drill |
 | C11 | Readiness returns **503** when the DB is stopped (`aws rds stop-db-instance`), then recovers | screenshot |

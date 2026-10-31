@@ -1,0 +1,63 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.2, pytest-8.3.4, pluggy-1.6.0 -- E:\ArrowStack Internship\project1-cloud-business-api\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: E:\ArrowStack Internship\project1-cloud-business-api
+plugins: anyio-4.15.1, cov-6.0.0
+collecting ... collected 35 items
+
+tests/test_config.py::test_settings_load_from_secrets_manager PASSED     [  2%]
+tests/test_config.py::test_db_credentials_follow_rotation PASSED         [  5%]
+tests/test_config.py::test_non_local_env_requires_api_key PASSED         [  8%]
+tests/test_config.py::test_local_env_has_dev_defaults PASSED             [ 11%]
+tests/test_db_rotation.py::test_retries_with_fresh_credentials PASSED    [ 14%]
+tests/test_db_rotation.py::test_gives_up_after_second_failure PASSED     [ 17%]
+tests/test_health.py::test_liveness PASSED                               [ 20%]
+tests/test_health.py::test_readiness_reports_database PASSED             [ 22%]
+tests/test_health.py::test_request_id_is_echoed PASSED                   [ 25%]
+tests/test_health.py::test_request_id_generated_when_absent PASSED       [ 28%]
+tests/test_orders.py::test_order_decrements_stock_and_totals PASSED      [ 31%]
+tests/test_orders.py::test_price_is_captured_at_order_time PASSED        [ 34%]
+tests/test_orders.py::test_insufficient_stock_is_rejected_atomically PASSED [ 37%]
+tests/test_orders.py::test_unknown_product_in_order PASSED               [ 40%]
+tests/test_orders.py::test_order_validation PASSED                       [ 42%]
+tests/test_orders.py::test_order_requires_api_key PASSED                 [ 45%]
+tests/test_orders.py::test_list_orders_newest_first PASSED               [ 48%]
+tests/test_orders.py::test_unknown_order_404 PASSED                      [ 51%]
+tests/test_products.py::test_create_and_get_product PASSED               [ 54%]
+tests/test_products.py::test_write_requires_api_key PASSED               [ 57%]
+tests/test_products.py::test_reads_are_public PASSED                     [ 60%]
+tests/test_products.py::test_duplicate_sku_conflicts PASSED              [ 62%]
+tests/test_products.py::test_invalid_product_rejected[payload0] PASSED   [ 65%]
+tests/test_products.py::test_invalid_product_rejected[payload1] PASSED   [ 68%]
+tests/test_products.py::test_invalid_product_rejected[payload2] PASSED   [ 71%]
+tests/test_products.py::test_invalid_product_rejected[payload3] PASSED   [ 74%]
+tests/test_products.py::test_invalid_product_rejected[payload4] PASSED   [ 77%]
+tests/test_products.py::test_invalid_product_rejected[payload5] PASSED   [ 80%]
+tests/test_products.py::test_unknown_product_404 PASSED                  [ 82%]
+tests/test_products.py::test_update_product PASSED                       [ 85%]
+tests/test_products.py::test_empty_update_rejected PASSED                [ 88%]
+tests/test_products.py::test_low_stock_filter PASSED                     [ 91%]
+tests/test_products.py::test_pagination_bounds PASSED                    [ 94%]
+tests/test_products.py::test_delete_product PASSED                       [ 97%]
+tests/test_products.py::test_cannot_delete_product_with_orders PASSED    [100%]
+
+---------- coverage: platform win32, python 3.13.2-final-0 -----------
+Name                      Stmts   Miss  Cover   Missing
+-------------------------------------------------------
+app\__init__.py               0      0   100%
+app\config.py                53      0   100%
+app\db.py                    49      7    86%   30-33, 74-76
+app\logging_config.py        18      1    94%   18
+app\main.py                  38      3    92%   48-50
+app\models.py                37      0   100%
+app\routers\__init__.py       0      0   100%
+app\routers\health.py        16      2    88%   22-23
+app\routers\orders.py        46      0   100%
+app\routers\products.py      48      0   100%
+app\schemas.py               60      0   100%
+app\security.py               7      0   100%
+-------------------------------------------------------
+TOTAL                       372     13    97%
+
+
+============================= 35 passed in 28.31s =============================

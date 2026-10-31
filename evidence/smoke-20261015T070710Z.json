@@ -1,0 +1,97 @@
+{
+  "base_url": "http://127.0.0.1:8000",
+  "run_at": "20261015T070710Z",
+  "results": [
+    {
+      "check": "liveness",
+      "expected": 200,
+      "actual": 200,
+      "ms": 8.5,
+      "result": "PASS"
+    },
+    {
+      "check": "readiness (DB reachable)",
+      "expected": 200,
+      "actual": 200,
+      "ms": 16.0,
+      "result": "PASS"
+    },
+    {
+      "check": "write without API key rejected",
+      "expected": 401,
+      "actual": 401,
+      "ms": 20.6,
+      "result": "PASS"
+    },
+    {
+      "check": "invalid product rejected",
+      "expected": 422,
+      "actual": 422,
+      "ms": 17.4,
+      "result": "PASS"
+    },
+    {
+      "check": "create product A",
+      "expected": 201,
+      "actual": 201,
+      "ms": 178.6,
+      "result": "PASS"
+    },
+    {
+      "check": "create product B",
+      "expected": 201,
+      "actual": 201,
+      "ms": 62.7,
+      "result": "PASS"
+    },
+    {
+      "check": "duplicate SKU rejected",
+      "expected": 409,
+      "actual": 409,
+      "ms": 28.7,
+      "result": "PASS"
+    },
+    {
+      "check": "place order",
+      "expected": 201,
+      "actual": 201,
+      "ms": 147.1,
+      "result": "PASS"
+    },
+    {
+      "check": "oversell rejected",
+      "expected": 409,
+      "actual": 409,
+      "ms": 14.7,
+      "result": "PASS"
+    },
+    {
+      "check": "read order back",
+      "expected": 200,
+      "actual": 200,
+      "ms": 33.2,
+      "result": "PASS"
+    },
+    {
+      "check": "stock decremented 5 -> 3",
+      "expected": 3,
+      "actual": 3,
+      "ms": 0,
+      "result": "PASS"
+    },
+    {
+      "check": "low-stock report",
+      "expected": 200,
+      "actual": 200,
+      "ms": 18.1,
+      "result": "PASS"
+    },
+    {
+      "check": "unknown route 404",
+      "expected": 404,
+      "actual": 404,
+      "ms": 4.0,
+      "result": "PASS"
+    }
+  ]
+}

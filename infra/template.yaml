@@ -1,0 +1,482 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  BrightMart Inventory & Orders API - Project 1 (Arrowstack Cloud Internship).
+  EC2 (Docker) + RDS PostgreSQL in a private subnet, Secrets Manager, CloudWatch logs/alarms/dashboard,
+  automated backups and a monthly cost budget. Sized for the AWS free tier.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: brightmart-api
+    AllowedPattern: "^[a-z][a-z0-9-]{2,30}$"
+  GitRepoUrl:
+    Type: String
+    Description: PUBLIC https Git URL of this repository (the instance clones and builds it)
+  GitBranch:
+    Type: String
+    Default: master
+  AppSubdir:
+    Type: String
+    Default: "."
+    Description: Folder inside the repo that contains the Dockerfile ("." when this project is the repo root)
+  AlertEmail:
+    Type: String
+    Description: Email for alarm and budget notifications (confirm the SNS subscription email!)
+    AllowedPattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+  AllowedHttpCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: Who may call the API on port 80. Use your own IP/32 to lock it down.
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues: [t3.micro, t2.micro]
+  DBInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+    AllowedValues: [db.t4g.micro, db.t3.micro]
+  MonthlyBudgetUsd:
+    Type: Number
+    Default: 5
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+Resources:
+  # ---------------------------------------------------------------- Network
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.20.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-vpc" }]
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: { VpcId: !Ref Vpc, InternetGatewayId: !Ref InternetGateway }
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.20.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-public-a" }]
+
+  # Private subnets have no route to the internet (and no NAT gateway, which would cost ~$32/month)
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.20.11.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-private-a" }]
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.20.12.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags: [{ Key: Name, Value: !Sub "${ProjectName}-private-b" }]
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: { VpcId: !Ref Vpc }
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PublicSubnetRoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref PublicSubnet, RouteTableId: !Ref PublicRouteTable }
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: { VpcId: !Ref Vpc }
+  PrivateSubnetARoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref PrivateSubnetA, RouteTableId: !Ref PrivateRouteTable }
+  PrivateSubnetBRoutes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: { SubnetId: !Ref PrivateSubnetB, RouteTableId: !Ref PrivateRouteTable }
+
+  # ---------------------------------------------------------------- Security groups
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: API instance - HTTP in only. No SSH (use SSM Session Manager).
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: !Ref AllowedHttpCidr, Description: API }
+
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: PostgreSQL - reachable only from the API security group
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 5432, ToPort: 5432, SourceSecurityGroupId: !Ref AppSecurityGroup }
+      SecurityGroupEgress:
+        - { IpProtocol: "-1", CidrIp: 127.0.0.1/32, Description: No outbound traffic needed }
+
+  # ---------------------------------------------------------------- Secrets
+  ApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${ProjectName}/api-key"
+      Description: X-API-Key required for write endpoints
+      GenerateSecretString:
+        PasswordLength: 40
+        ExcludePunctuation: true
+
+  # ---------------------------------------------------------------- Database
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Private subnets for RDS
+      SubnetIds: [!Ref PrivateSubnetA, !Ref PrivateSubnetB]
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot          # final snapshot on stack delete
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub "${ProjectName}-db"
+      Engine: postgres                # no EngineVersion: RDS picks its current default (old minors get retired)
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: "20"
+      StorageType: gp3
+      StorageEncrypted: true
+      DBName: businessapi
+      MasterUsername: appadmin
+      ManageMasterUserPassword: true  # RDS stores + rotates the password in Secrets Manager
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VPCSecurityGroups: [!Ref DbSecurityGroup]
+      PubliclyAccessible: false
+      MultiAZ: false
+      BackupRetentionPeriod: 7        # daily snapshots + point-in-time restore for 7 days
+      PreferredBackupWindow: "18:30-19:00"          # 00:00-00:30 IST
+      PreferredMaintenanceWindow: "sun:19:30-sun:20:00"
+      CopyTagsToSnapshot: true
+      AutoMinorVersionUpgrade: true
+      EnableCloudwatchLogsExports: [postgresql]
+      Tags: [{ Key: Project, Value: !Ref ProjectName }]
+
+  # ---------------------------------------------------------------- Logging
+  AppLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/${ProjectName}/app"
+      RetentionInDays: 14
+
+  # ---------------------------------------------------------------- IAM (least privilege)
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore   # shell access without SSH keys/port 22
+      Policies:
+        - PolicyName: app-runtime
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadOnlyThisAppsSecrets
+                Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref ApiKeySecret
+                  - !GetAtt Database.MasterUserSecret.SecretArn
+              - Sid: WriteOnlyThisAppsLogs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents, logs:DescribeLogStreams]
+                Resource: !GetAtt AppLogGroup.Arn
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: { Roles: [!Ref InstanceRole] }
+
+  # ---------------------------------------------------------------- Compute
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile: { Arn: !GetAtt InstanceProfile.Arn }
+        MetadataOptions:
+          HttpTokens: required          # IMDSv2 only
+          HttpPutResponseHopLimit: 2    # lets the Docker container reach IMDS for role credentials
+          HttpEndpoint: enabled
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs: { VolumeSize: 10, VolumeType: gp3, Encrypted: true, DeleteOnTermination: true }
+        TagSpecifications:
+          - ResourceType: instance
+            Tags: [{ Key: Name, Value: !Sub "${ProjectName}-app" }, { Key: Project, Value: !Ref ProjectName }]
+        UserData:
+          Fn::Base64: !Sub
+            - |
+              #!/bin/bash
+              set -euxo pipefail
+              dnf install -y docker git aws-cfn-bootstrap
+              trap '/opt/aws/bin/cfn-signal -e 1 --stack ${AWS::StackName} --resource AppInstance --region ${AWS::Region}' ERR
+              systemctl enable --now docker
+              mkdir -p /opt/app
+
+              cat > /opt/app/app.env <<'EOF'
+              APP_ENV=prod
+              AWS_REGION=${AWS::Region}
+              DB_HOST=${DbHost}
+              DB_PORT=${DbPort}
+              DB_NAME=businessapi
+              DB_SECRET_ARN=${DbSecretArn}
+              API_KEY_SECRET_ARN=${ApiKeySecret}
+              LOG_LEVEL=INFO
+              EOF
+
+              # Re-runnable deploy script: pulls latest code, rebuilds, restarts the container
+              cat > /opt/app/deploy.sh <<'EOF'
+              #!/bin/bash
+              set -euo pipefail
+              if [ ! -d /opt/app/src ]; then
+                git clone --depth 1 --branch ${GitBranch} ${GitRepoUrl} /opt/app/src
+              else
+                git -C /opt/app/src fetch --depth 1 origin ${GitBranch}
+                git -C /opt/app/src reset --hard FETCH_HEAD
+              fi
+              docker build -t ${ProjectName}:latest /opt/app/src/${AppSubdir}
+              docker rm -f api 2>/dev/null || true
+              docker run -d --name api --restart unless-stopped -p 80:8000 \
+                --env-file /opt/app/app.env \
+                --log-driver awslogs \
+                --log-opt awslogs-region=${AWS::Region} \
+                --log-opt awslogs-group=${AppLogGroup} \
+                ${ProjectName}:latest
+              docker image prune -f
+              for i in $(seq 1 40); do
+                curl -fsS http://127.0.0.1/health/ready && exit 0
+                sleep 3
+              done
+              echo "API did not become ready" >&2
+              exit 1
+              EOF
+              chmod +x /opt/app/deploy.sh
+
+              /opt/app/deploy.sh
+              /opt/aws/bin/cfn-signal -e 0 --stack ${AWS::StackName} --resource AppInstance --region ${AWS::Region}
+            - DbHost: !GetAtt Database.Endpoint.Address
+              DbPort: !GetAtt Database.Endpoint.Port
+              DbSecretArn: !GetAtt Database.MasterUserSecret.SecretArn
+
+  AppInstance:
+    Type: AWS::EC2::Instance
+    DependsOn: [PublicDefaultRoute, PublicSubnetRoutes]   # needs internet during first boot
+    CreationPolicy:
+      ResourceSignal: { Count: 1, Timeout: PT20M }   # stack only succeeds once /health/ready passes
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds: [!Ref AppSecurityGroup]
+
+  AppElasticIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref AppInstance
+
+  # ---------------------------------------------------------------- Monitoring & alerting
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${ProjectName}-alerts"
+      Subscription: [{ Protocol: email, Endpoint: !Ref AlertEmail }]
+
+  ServerErrorMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AppLogGroup
+      FilterPattern: '{ $.msg = "request" && $.status >= 500 }'
+      MetricTransformations:
+        - { MetricNamespace: !Sub "${ProjectName}", MetricName: ServerErrors, MetricValue: "1", Unit: Count }
+
+  RequestCountMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AppLogGroup
+      FilterPattern: '{ $.msg = "request" }'
+      MetricTransformations:
+        - { MetricNamespace: !Sub "${ProjectName}", MetricName: Requests, MetricValue: "1", Unit: Count }
+
+  LatencyMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AppLogGroup
+      FilterPattern: '{ $.msg = "request" }'
+      MetricTransformations:
+        - { MetricNamespace: !Sub "${ProjectName}", MetricName: LatencyMs, MetricValue: "$.duration_ms", Unit: Milliseconds }
+
+  ServerErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-5xx-errors"
+      AlarmDescription: API returned 5 or more 5xx responses in 5 minutes
+      Namespace: !Sub "${ProjectName}"
+      MetricName: ServerErrors
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+
+  LatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-p95-latency"
+      AlarmDescription: p95 request latency above 1s for 15 minutes
+      Namespace: !Sub "${ProjectName}"
+      MetricName: LatencyMs
+      ExtendedStatistic: p95
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 1000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  InstanceStatusAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-instance-system-check"
+      AlarmDescription: Underlying host failed - EC2 auto-recovers the instance (same IP, same disk)
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_System
+      Dimensions: [{ Name: InstanceId, Value: !Ref AppInstance }]
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Sub "arn:aws:automate:${AWS::Region}:ec2:recover"
+        - !Ref AlertTopic
+
+  InstanceCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-instance-cpu"
+      AlarmDescription: EC2 CPU above 80% for 15 minutes (t3 burst credits may be draining)
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Dimensions: [{ Name: InstanceId, Value: !Ref AppInstance }]
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions: [!Ref AlertTopic]
+
+  DbCpuAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-db-cpu"
+      Namespace: AWS/RDS
+      MetricName: CPUUtilization
+      Dimensions: [{ Name: DBInstanceIdentifier, Value: !Ref Database }]
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions: [!Ref AlertTopic]
+
+  DbStorageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-db-free-storage"
+      AlarmDescription: Less than 2 GiB of database storage left
+      Namespace: AWS/RDS
+      MetricName: FreeStorageSpace
+      Dimensions: [{ Name: DBInstanceIdentifier, Value: !Ref Database }]
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 2147483648
+      ComparisonOperator: LessThanThreshold
+      AlarmActions: [!Ref AlertTopic]
+
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub "${ProjectName}"
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {"type":"metric","x":0,"y":0,"width":8,"height":6,"properties":{"title":"Requests & 5xx (per 5 min)","region":"${AWS::Region}","stat":"Sum","period":300,
+              "metrics":[["${ProjectName}","Requests"],["${ProjectName}","ServerErrors",{"color":"#d62728"}]]}},
+            {"type":"metric","x":8,"y":0,"width":8,"height":6,"properties":{"title":"Latency ms (p50 / p95)","region":"${AWS::Region}","period":300,
+              "metrics":[["${ProjectName}","LatencyMs",{"stat":"p50"}],["${ProjectName}","LatencyMs",{"stat":"p95"}]]}},
+            {"type":"metric","x":16,"y":0,"width":8,"height":6,"properties":{"title":"EC2 CPU %","region":"${AWS::Region}","stat":"Average","period":300,
+              "metrics":[["AWS/EC2","CPUUtilization","InstanceId","${AppInstance}"]]}},
+            {"type":"metric","x":0,"y":6,"width":8,"height":6,"properties":{"title":"RDS CPU %","region":"${AWS::Region}","stat":"Average","period":300,
+              "metrics":[["AWS/RDS","CPUUtilization","DBInstanceIdentifier","${Database}"]]}},
+            {"type":"metric","x":8,"y":6,"width":8,"height":6,"properties":{"title":"RDS connections","region":"${AWS::Region}","stat":"Maximum","period":300,
+              "metrics":[["AWS/RDS","DatabaseConnections","DBInstanceIdentifier","${Database}"]]}},
+            {"type":"metric","x":16,"y":6,"width":8,"height":6,"properties":{"title":"RDS free storage (bytes)","region":"${AWS::Region}","stat":"Minimum","period":300,
+              "metrics":[["AWS/RDS","FreeStorageSpace","DBInstanceIdentifier","${Database}"]]}},
+            {"type":"log","x":0,"y":12,"width":24,"height":6,"properties":{"title":"Recent errors","region":"${AWS::Region}",
+              "query":"SOURCE '${AppLogGroup}' | fields ts, level, msg, path, status, request_id | filter level = 'ERROR' or status >= 500 | sort @timestamp desc | limit 50"}}
+          ]
+        }
+
+  # ---------------------------------------------------------------- Cost guardrail
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub "${ProjectName}-monthly"
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit: { Amount: !Ref MonthlyBudgetUsd, Unit: USD }
+      NotificationsWithSubscribers:
+        - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 80, ThresholdType: PERCENTAGE }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+        - Notification: { NotificationType: FORECASTED, ComparisonOperator: GREATER_THAN, Threshold: 100, ThresholdType: PERCENTAGE }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+
+Outputs:
+  ApiUrl:
+    Value: !Sub "http://${AppElasticIp}"
+  ApiDocsUrl:
+    Description: Interactive Swagger UI
+    Value: !Sub "http://${AppElasticIp}/docs"
+  ApiKeySecretArn:
+    Description: "Get the key: aws secretsmanager get-secret-value --secret-id <this> --query SecretString --output text"
+    Value: !Ref ApiKeySecret
+  InstanceId:
+    Value: !Ref AppInstance
+  DatabaseEndpoint:
+    Value: !GetAtt Database.Endpoint.Address
+  DatabaseInstanceId:
+    Value: !Ref Database
+  LogGroup:
+    Value: !Ref AppLogGroup
+  DashboardUrl:
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${ProjectName}"

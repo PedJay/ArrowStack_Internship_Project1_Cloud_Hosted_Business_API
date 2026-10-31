@@ -1,0 +1,11 @@
+.venv
+__pycache__
+*.pyc
+*.db
+tests
+docs
+infra
+scripts
+evidence
+.pytest_cache
+.coverage

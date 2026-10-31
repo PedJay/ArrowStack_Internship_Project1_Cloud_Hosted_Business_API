@@ -31,12 +31,15 @@ Report: `evidence/smoke-20261015T070710Z.json`
 **13 / 13 checks passed:** liveness, readiness, 401 without key, 422 invalid input, create ×2, duplicate SKU 409,
 place order, oversell 409, read order, stock 5 → 3, low-stock report, unknown route 404.
 
-## 4. Cloud validation (fill in after `deploy.ps1`)
+## 4. Cloud validation (2026-10-31, stack `brightmart-api`, ap-south-1)
+
+**Cloud smoke test: 13 / 13 PASS** against the Elastic IP, single-call latency 49–117 ms (N4 target p95 < 300 ms ✅).
+Report: `evidence/smoke-20261031T151603Z.json`. First deploy attempt failed on the AWS free plan's backup-retention limit (D16).
 
 | # | Evidence to capture | Result / file |
 |---|---|---|
 | C1 | `deploy.ps1` output table (stack outputs) | `evidence/c1-stack-outputs.png` |
-| C2 | `smoke_test.py` against the Elastic IP: 13/13 | `evidence/smoke-<timestamp>.json` + screenshot |
+| C2 | `smoke_test.py` against the Elastic IP: 13/13 | ✅ `evidence/smoke-20261031T151603Z.json` + screenshot |
 | C3 | Swagger UI at `http://<ip>/docs` | screenshot |
 | C4 | CloudWatch dashboard with traffic from C2 | screenshot |
 | C5 | Logs Insights query tracing one `request_id` | screenshot |
